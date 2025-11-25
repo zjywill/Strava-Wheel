@@ -7,7 +7,7 @@ import ModeToggle from './components/ModeToggle.vue';
 
 const navItems = [
   { label: 'Home', to: '/' },
-  { label: 'Components', to: '/components' },
+  { label: 'Login', to: '/login' },
   { label: 'Blocks', to: '/blocks' },
   { label: 'Charts', to: '/charts' },
   { label: 'Themes', to: '/themes' },

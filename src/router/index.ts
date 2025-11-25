@@ -8,10 +8,10 @@ const routes = [
     meta: { label: 'Home' },
   },
   {
-    path: '/components',
-    name: 'components',
-    component: () => import('@/view/Components.vue'),
-    meta: { label: 'Components' },
+    path: '/login',
+    name: 'login',
+    component: () => import('@/view/Login.vue'),
+    meta: { label: 'Login' },
   },
   {
     path: '/blocks',
