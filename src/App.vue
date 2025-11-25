@@ -9,9 +9,6 @@ const navItems = [
   { label: 'Home', to: '/' },
   { label: 'Login', to: '/login' },
   { label: 'Activities', to: '/activities' },
-  { label: 'Charts', to: '/charts' },
-  { label: 'Themes', to: '/themes' },
-  { label: 'Colors', to: '/colors' },
 ];
 
 const route = useRoute();

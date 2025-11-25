@@ -19,24 +19,6 @@ const routes = [
     component: () => import('@/view/Activities.vue'),
     meta: { label: 'Activities' },
   },
-  {
-    path: '/charts',
-    name: 'charts',
-    component: () => import('@/view/Charts.vue'),
-    meta: { label: 'Charts' },
-  },
-  {
-    path: '/themes',
-    name: 'themes',
-    component: () => import('@/view/Themes.vue'),
-    meta: { label: 'Themes' },
-  },
-  {
-    path: '/colors',
-    name: 'colors',
-    component: () => import('@/view/Colors.vue'),
-    meta: { label: 'Colors' },
-  },
 ];
 
 export const router = createRouter({

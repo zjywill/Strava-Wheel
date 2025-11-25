@@ -27,12 +27,15 @@ type SavedCred = {
 const clientId = ref('');
 const clientSecret = ref('');
 const redirectUri = ref(`${window.location.origin}/login`);
+const wheelModel = ref('');
+const wheelBaseUrl = ref('');
+const wheelApiKey = ref('');
 const authCode = ref('');
 const isLoadingProfile = ref(false);
 const errorMessage = ref('');
 
 const stravaStore = useStravaStore();
-const { tokens, athlete } = storeToRefs(stravaStore);
+const { tokens, athlete, wheelSettings } = storeToRefs(stravaStore);
 
 const isTokenValid = computed(() => {
   const token = tokens.value;
@@ -71,6 +74,12 @@ function restoreCred() {
   } catch {
     /* ignore */
   }
+}
+
+function restoreWheelSettings() {
+  wheelModel.value = wheelSettings.value.model ?? '';
+  wheelBaseUrl.value = wheelSettings.value.baseUrl ?? '';
+  wheelApiKey.value = wheelSettings.value.apiKey ?? '';
 }
 
 function startLogin() {
@@ -146,9 +155,18 @@ async function exchangeCodeForToken(code: string) {
   }
 }
 
+function saveWheelSettings() {
+  stravaStore.setWheelSettings({
+    model: wheelModel.value.trim(),
+    baseUrl: wheelBaseUrl.value.trim(),
+    apiKey: wheelApiKey.value.trim(),
+  });
+}
+
 onMounted(() => {
   restoreCred();
   stravaStore.restoreFromStorage();
+  restoreWheelSettings();
 
   const url = new URL(window.location.href);
   const codeParam = url.searchParams.get('code');
@@ -242,6 +260,49 @@ onMounted(() => {
         <p class="text-xs text-muted-foreground">
           回调地址默认为当前页面：<code>{{ redirectUri }}</code>
         </p>
+      </div>
+
+      <div class="space-y-2 border-t border-border/60 pt-4">
+        <p class="text-sm font-semibold text-foreground">WheelLoop 配置</p>
+        <div class="grid gap-3 md:grid-cols-2">
+          <div class="space-y-2">
+            <Label for="wheel-model">模型</Label>
+            <Input
+              id="wheel-model"
+              v-model="wheelModel"
+              placeholder="如 gpt-4o-mini"
+            />
+            <p class="text-xs text-muted-foreground">
+              对应 VITE_WHEELLOOP_MODEL，留空则走默认。
+            </p>
+          </div>
+          <div class="space-y-2">
+            <Label for="wheel-base-url">Base URL（可选）</Label>
+            <Input
+              id="wheel-base-url"
+              v-model="wheelBaseUrl"
+              placeholder="自定义 OpenAI Base URL"
+            />
+            <p class="text-xs text-muted-foreground">
+              对应 VITE_WHEELLOOP_BASE_URL，国内代理时填写。
+            </p>
+          </div>
+        </div>
+        <div class="space-y-2">
+          <Label for="wheel-api-key">API Key</Label>
+          <Input
+            id="wheel-api-key"
+            v-model="wheelApiKey"
+            type="password"
+            placeholder="必填，用于生成锐评"
+          />
+          <p class="text-xs text-muted-foreground">
+            对应 VITE_WHEELLOOP_API_KEY，保存在 localStorage。
+          </p>
+        </div>
+        <Button type="button" class="w-full" @click="saveWheelSettings">
+          保存 WheelLoop 配置
+        </Button>
       </div>
     </CardContent>
   </Card>

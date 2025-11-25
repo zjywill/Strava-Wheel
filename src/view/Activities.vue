@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch, type Ref } from 'vue';
+import OpenAI from 'openai';
 import { storeToRefs } from 'pinia';
 import { useStravaStore } from '@/stores/strava';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ type Activity = {
   distance: number;
   moving_time: number;
   start_date_local: string;
+  description?: string;
   sport_type?: string;
 };
 
@@ -26,11 +28,17 @@ type Athlete = {
 };
 
 const stravaStore = useStravaStore();
-const { tokens, athlete } = storeToRefs(stravaStore);
+const { tokens, athlete, wheelSettings } = storeToRefs(stravaStore);
 
 const activities = ref<Activity[]>([]);
 const isLoading = ref(false);
 const errorMessage = ref('');
+const reviewText = ref<Record<number, string>>({});
+const reviewLoading = ref<Record<number, boolean>>({});
+const reviewError = ref<Record<number, string>>({});
+const publishLoading = ref<Record<number, boolean>>({});
+const publishError = ref<Record<number, string>>({});
+const publishSuccess = ref<Record<number, string>>({});
 
 const isTokenValid = computed(() => {
   const token = tokens.value;
@@ -45,6 +53,12 @@ const athleteName = computed(() => {
   const data = athlete.value as Athlete | null;
   return data?.firstname ?? '';
 });
+
+const wheelConfig = computed(() => ({
+  model: wheelSettings.value.model || 'gpt-4o-mini',
+  baseUrl: wheelSettings.value.baseUrl || '',
+  apiKey: wheelSettings.value.apiKey || '',
+}));
 
 function formatDistance(meters?: number) {
   if (meters === undefined || meters === null) return '—';
@@ -102,9 +116,7 @@ async function loadActivities() {
     activities.value = Array.isArray(data) ? data : [];
   } catch (error) {
     errorMessage.value =
-      error instanceof Error
-        ? error.message
-        : '获取活动失败，请稍后重试。';
+      error instanceof Error ? error.message : '获取活动失败，请稍后重试。';
   } finally {
     isLoading.value = false;
   }
@@ -139,6 +151,121 @@ watch(
     loadActivities();
   }
 );
+
+function updateMapValue<T>(
+  target: Ref<Record<number, T>>,
+  key: number,
+  value: T
+) {
+  target.value = { ...target.value, [key]: value };
+}
+
+async function generateReview(act: Activity) {
+  const id = act.id;
+  updateMapValue(reviewError, id, '');
+  updateMapValue(reviewLoading, id, true);
+  updateMapValue(publishError, id, '');
+  updateMapValue(publishSuccess, id, '');
+
+  const config = wheelConfig.value;
+
+  if (!config.apiKey) {
+    updateMapValue(
+      reviewError,
+      id,
+      '缺少 OpenAI API Key，请在 Login 页填写或 .env 中配置 VITE_WHEELLOOP_API_KEY。'
+    );
+    updateMapValue(reviewLoading, id, false);
+    return;
+  }
+
+  try {
+    const client = new OpenAI({
+      apiKey: config.apiKey,
+      baseURL: config.baseUrl || undefined,
+      dangerouslyAllowBrowser: true,
+    });
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      temperature: 0.1,
+      messages: [
+        {
+          role: 'system',
+          content:
+            '你是毒舌又幽默的运动解说员，用一句精炼的中文锐评点评用户的运动表现，保持轻松但不要太刻薄，不要重复活动的原始字段。',
+        },
+        {
+          role: 'user',
+          content: `请针对下面这条 Strava 活动生成一句不超过 40 字的锐评：\n${JSON.stringify(
+            act
+          )}`,
+        },
+      ],
+    });
+
+    updateMapValue(
+      reviewText,
+      id,
+      completion.choices?.[0]?.message?.content?.trim() ||
+        '生成失败，请稍后重试。'
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : '生成锐评失败，请稍后重试。';
+    updateMapValue(reviewError, id, message);
+  } finally {
+    updateMapValue(reviewLoading, id, false);
+  }
+}
+
+async function publishReview(act: Activity) {
+  const id = act.id;
+  updateMapValue(publishError, id, '');
+  updateMapValue(publishSuccess, id, '');
+
+  if (!tokens.value?.access_token || !isTokenValid.value) {
+    updateMapValue(publishError, id, 'Token 无效，请重新登录后再试。');
+    return;
+  }
+
+  const review = reviewText.value[id];
+  if (!review) {
+    updateMapValue(publishError, id, '请先生成锐评，再尝试发布。');
+    return;
+  }
+
+  const newDescription = act.description
+    ? `${act.description}\n\n锐评：${review}`
+    : `锐评：${review}`;
+
+  updateMapValue(publishLoading, id, true);
+  try {
+    const res = await fetch(`https://www.strava.com/api/v3/activities/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `${tokenType.value} ${tokens.value.access_token}`,
+      },
+      body: JSON.stringify({ description: newDescription }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`发布失败：${res.status}`);
+    }
+
+    activities.value = activities.value.map((item) =>
+      item.id === id ? { ...item, description: newDescription } : item
+    );
+    updateMapValue(publishSuccess, id, '已发布到 Strava 描述');
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : '发布失败，请稍后重试。';
+    updateMapValue(publishError, id, message);
+  } finally {
+    updateMapValue(publishLoading, id, false);
+  }
+}
 </script>
 
 <template>
@@ -151,11 +278,10 @@ watch(
       <div class="flex flex-wrap items-center gap-3 text-sm">
         <div class="text-muted-foreground">
           <p v-if="isTokenValid">
-            Token 有效{{ athleteName ? ` · ${athleteName}` : '' }}，展示最近 20 条活动。
+            Token 有效{{ athleteName ? ` · ${athleteName}` : '' }}，展示最近 20
+            条活动。
           </p>
-          <p v-else-if="tokens">
-            当前 token 已过期，请重新登录后再试。
-          </p>
+          <p v-else-if="tokens">当前 token 已过期，请重新登录后再试。</p>
           <p v-else>请先登录以获取 Strava token。</p>
         </div>
         <Button
@@ -202,6 +328,49 @@ watch(
               </p>
               <p>移动时间 {{ formatDuration(act.moving_time) }}</p>
             </div>
+          </div>
+
+          <div
+            class="mt-3 space-y-2 rounded-md border border-dashed border-border bg-background/70 p-3"
+          >
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="text-sm font-semibold text-foreground">锐评</p>
+              <Button
+                size="sm"
+                variant="secondary"
+                :disabled="reviewLoading[act.id]"
+                @click="generateReview(act)"
+              >
+                {{ reviewLoading[act.id] ? '生成中…' : '生成锐评' }}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                :disabled="publishLoading[act.id] || !reviewText[act.id]"
+                @click="publishReview(act)"
+              >
+                {{ publishLoading[act.id] ? '发布中…' : '发布到 Strava' }}
+              </Button>
+              <p v-if="reviewError[act.id]" class="text-xs text-destructive">
+                {{ reviewError[act.id] }}
+              </p>
+              <p v-if="publishError[act.id]" class="text-xs text-destructive">
+                {{ publishError[act.id] }}
+              </p>
+              <p v-if="publishSuccess[act.id]" class="text-xs text-emerald-600">
+                {{ publishSuccess[act.id] }}
+              </p>
+            </div>
+
+            <p
+              v-if="reviewText[act.id]"
+              class="text-sm leading-relaxed text-foreground"
+            >
+              {{ reviewText[act.id] }}
+            </p>
+            <p v-else class="text-xs text-muted-foreground">
+              点击生成一句犀利但幽默的活动点评。
+            </p>
           </div>
         </div>
       </div>
