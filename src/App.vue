@@ -2,12 +2,11 @@
 import { computed } from 'vue';
 import { Icon } from '@iconify/vue';
 import { RouterLink, RouterView, useRoute } from 'vue-router';
-import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import ModeToggle from './components/ModeToggle.vue';
 
 const navItems = [
-  { label: 'Docs', to: '/' },
+  { label: 'Home', to: '/' },
   { label: 'Components', to: '/components' },
   { label: 'Blocks', to: '/blocks' },
   { label: 'Charts', to: '/charts' },

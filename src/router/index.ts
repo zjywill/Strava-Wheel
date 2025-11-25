@@ -3,9 +3,9 @@ import { createRouter, createWebHistory } from 'vue-router';
 const routes = [
   {
     path: '/',
-    name: 'docs',
+    name: 'home',
     component: () => import('@/view/Home.vue'),
-    meta: { label: 'Docs' },
+    meta: { label: 'Home' },
   },
   {
     path: '/components',
