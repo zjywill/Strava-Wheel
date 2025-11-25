@@ -19,6 +19,7 @@ export type WheelSettings = {
   model: string;
   baseUrl: string;
   apiKey: string;
+  systemPrompt: string;
 };
 
 const STORAGE_KEY = 'strava.session.v1';
@@ -26,6 +27,7 @@ const defaultWheelSettings: WheelSettings = {
   model: '',
   baseUrl: '',
   apiKey: '',
+  systemPrompt: '',
 };
 
 function readStorage(): StoredSession {
@@ -38,10 +40,14 @@ function readStorage(): StoredSession {
     if (!raw)
       return { tokens: null, athlete: null, wheel: { ...defaultWheelSettings } };
     const parsed = JSON.parse(raw) as StoredSession;
+    const parsedWheel =
+      typeof parsed.wheel === 'object' && parsed.wheel !== null
+        ? parsed.wheel
+        : { ...defaultWheelSettings };
     return {
       tokens: parsed.tokens ?? null,
       athlete: parsed.athlete ?? null,
-      wheel: parsed.wheel ?? { ...defaultWheelSettings },
+      wheel: { ...defaultWheelSettings, ...parsedWheel },
     };
   } catch {
     return { tokens: null, athlete: null, wheel: { ...defaultWheelSettings } };

@@ -3,6 +3,7 @@ import { computed, ref, onMounted } from 'vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { storeToRefs } from 'pinia';
 import { useStravaStore } from '@/stores/strava';
 import type { TokenPayload } from '@/stores/strava';
@@ -24,12 +25,20 @@ type SavedCred = {
   redirectUri: string;
 };
 
+function ensureHashLogin() {
+  // 强制使用 hash 路由的登录回调
+  return `${window.location.origin}/#/login`;
+}
+
 const clientId = ref('');
 const clientSecret = ref('');
-const redirectUri = ref(`${window.location.origin}/login`);
+const redirectUri = ref(ensureHashLogin());
+const defaultSystemPrompt =
+  '你是毒舌又幽默的运动解说员，用一句精炼的中文锐评点评用户的运动表现，保持轻松但不要太刻薄，不要重复活动的原始字段。';
 const wheelModel = ref('');
 const wheelBaseUrl = ref('');
 const wheelApiKey = ref('');
+const wheelSystemPrompt = ref('');
 const authCode = ref('');
 const isLoadingProfile = ref(false);
 const errorMessage = ref('');
@@ -70,7 +79,7 @@ function restoreCred() {
     const parsed = JSON.parse(raw) as Partial<SavedCred>;
     clientId.value = parsed.clientId ?? '';
     clientSecret.value = parsed.clientSecret ?? '';
-    redirectUri.value = parsed.redirectUri ?? redirectUri.value;
+    redirectUri.value = ensureHashLogin();
   } catch {
     /* ignore */
   }
@@ -80,6 +89,22 @@ function restoreWheelSettings() {
   wheelModel.value = wheelSettings.value.model ?? '';
   wheelBaseUrl.value = wheelSettings.value.baseUrl ?? '';
   wheelApiKey.value = wheelSettings.value.apiKey ?? '';
+  wheelSystemPrompt.value =
+    wheelSettings.value.systemPrompt || defaultSystemPrompt;
+}
+
+function extractCodeFromLocation() {
+  const url = new URL(window.location.href);
+  // 先取 search 参数
+  const directCode = url.searchParams.get('code');
+  if (directCode) return directCode;
+
+  // hash 路由下 code 会落在 #/login?code=xxx
+  const hash = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash;
+  const [, hashQuery = ''] = hash.split('?');
+  if (!hashQuery) return null;
+  const hashParams = new URLSearchParams(hashQuery);
+  return hashParams.get('code');
 }
 
 function startLogin() {
@@ -138,11 +163,20 @@ async function exchangeCodeForToken(code: string) {
       athlete: data?.athlete ?? null,
     });
 
-    // 清理 URL 中的 code，避免重复交换
+    // 清理 URL 中的 code，避免重复交换（兼容 hash 路由）
     const url = new URL(window.location.href);
     url.searchParams.delete('code');
     url.searchParams.delete('scope');
     url.searchParams.delete('state');
+    if (url.hash.includes('?')) {
+      const [hashPath, hashQuery = ''] = url.hash.slice(1).split('?');
+      const hashParams = new URLSearchParams(hashQuery);
+      hashParams.delete('code');
+      hashParams.delete('scope');
+      hashParams.delete('state');
+      const newHashQuery = hashParams.toString();
+      url.hash = newHashQuery ? `#${hashPath}?${newHashQuery}` : `#${hashPath}`;
+    }
     window.history.replaceState({}, '', url.toString());
     authCode.value = '';
   } catch (error) {
@@ -160,6 +194,7 @@ function saveWheelSettings() {
     model: wheelModel.value.trim(),
     baseUrl: wheelBaseUrl.value.trim(),
     apiKey: wheelApiKey.value.trim(),
+    systemPrompt: wheelSystemPrompt.value.trim(),
   });
 }
 
@@ -168,8 +203,7 @@ onMounted(() => {
   stravaStore.restoreFromStorage();
   restoreWheelSettings();
 
-  const url = new URL(window.location.href);
-  const codeParam = url.searchParams.get('code');
+  const codeParam = extractCodeFromLocation();
   if (codeParam) {
     authCode.value = codeParam;
     exchangeCodeForToken(codeParam);
@@ -298,6 +332,18 @@ onMounted(() => {
           />
           <p class="text-xs text-muted-foreground">
             对应 VITE_WHEELLOOP_API_KEY，保存在 localStorage。
+          </p>
+        </div>
+        <div class="space-y-2">
+          <Label for="wheel-system-prompt">System Prompt</Label>
+          <Textarea
+            id="wheel-system-prompt"
+            v-model="wheelSystemPrompt"
+            rows="3"
+            placeholder="自定义锐评的 System Prompt，不填则使用默认"
+          />
+          <p class="text-xs text-muted-foreground">
+            用来自定义生成锐评的风格，留空则使用默认的毒舌幽默提示。
           </p>
         </div>
         <Button type="button" class="w-full" @click="saveWheelSettings">

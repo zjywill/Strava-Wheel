@@ -29,6 +29,8 @@ type Athlete = {
 
 const stravaStore = useStravaStore();
 const { tokens, athlete, wheelSettings } = storeToRefs(stravaStore);
+const defaultSystemPrompt =
+  '你是毒舌又幽默的运动解说员，用一句精炼的中文锐评点评用户的运动表现，保持轻松但不要太刻薄，不要重复活动的原始字段。';
 
 const activities = ref<Activity[]>([]);
 const isLoading = ref(false);
@@ -58,6 +60,7 @@ const wheelConfig = computed(() => ({
   model: wheelSettings.value.model || 'gpt-4o-mini',
   baseUrl: wheelSettings.value.baseUrl || '',
   apiKey: wheelSettings.value.apiKey || '',
+  systemPrompt: wheelSettings.value.systemPrompt || defaultSystemPrompt,
 }));
 
 function formatDistance(meters?: number) {
@@ -192,8 +195,7 @@ async function generateReview(act: Activity) {
       messages: [
         {
           role: 'system',
-          content:
-            '你是毒舌又幽默的运动解说员，用一句精炼的中文锐评点评用户的运动表现，保持轻松但不要太刻薄，不要重复活动的原始字段。',
+          content: config.systemPrompt || defaultSystemPrompt,
         },
         {
           role: 'user',
