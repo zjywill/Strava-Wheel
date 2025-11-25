@@ -14,10 +14,10 @@ const routes = [
     meta: { label: 'Login' },
   },
   {
-    path: '/blocks',
-    name: 'blocks',
-    component: () => import('@/view/Blocks.vue'),
-    meta: { label: 'Blocks' },
+    path: '/activities',
+    name: 'activities',
+    component: () => import('@/view/Activities.vue'),
+    meta: { label: 'Activities' },
   },
   {
     path: '/charts',

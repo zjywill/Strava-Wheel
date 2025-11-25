@@ -86,7 +86,7 @@ function startLogin() {
     redirect_uri: redirectUri.value,
     response_type: 'code',
     approval_prompt: 'auto',
-    scope: 'read',
+    scope: 'activity:read,activity:read_all,activity:write',
   });
   window.location.href = `${AUTHORIZE_URL}?${params.toString()}`;
 }
