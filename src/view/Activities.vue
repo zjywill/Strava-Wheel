@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch, type Ref } from 'vue';
 import OpenAI from 'openai';
 import { storeToRefs } from 'pinia';
 import { useStravaStore } from '@/stores/strava';
+import type { TokenPayload } from '@/stores/strava';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -11,6 +12,9 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+
+const TOKEN_URL = 'https://www.strava.com/oauth/token';
+const credentialStorageKey = 'strava.credentials.v1';
 
 type Activity = {
   id: number;
@@ -41,6 +45,9 @@ const reviewError = ref<Record<number, string>>({});
 const publishLoading = ref<Record<number, boolean>>({});
 const publishError = ref<Record<number, string>>({});
 const publishSuccess = ref<Record<number, string>>({});
+const refreshLoading = ref(false);
+const refreshMessage = ref('');
+const refreshError = ref('');
 
 const isTokenValid = computed(() => {
   const token = tokens.value;
@@ -62,6 +69,31 @@ const wheelConfig = computed(() => ({
   apiKey: wheelSettings.value.apiKey || '',
   systemPrompt: wheelSettings.value.systemPrompt || defaultSystemPrompt,
 }));
+
+type SavedCred = {
+  clientId?: string;
+  clientSecret?: string;
+  redirectUri?: string;
+};
+
+function readSavedCredential() {
+  if (typeof sessionStorage === 'undefined') return {};
+  try {
+    const raw = sessionStorage.getItem(credentialStorageKey);
+    if (!raw) return {};
+    return JSON.parse(raw) as SavedCred;
+  } catch {
+    return {};
+  }
+}
+
+function resolveClientCredential() {
+  const saved = readSavedCredential();
+  return {
+    clientId: saved.clientId || '',
+    clientSecret: saved.clientSecret || '',
+  };
+}
 
 function formatDistance(meters?: number) {
   if (meters === undefined || meters === null) return '—';
@@ -94,7 +126,7 @@ async function loadActivities() {
 
   if (!isTokenValid.value) {
     activities.value = [];
-    errorMessage.value = '当前 token 已过期，请重新登录。';
+    errorMessage.value = '当前 token 已过期，请刷新 token 或重新登录。';
     return;
   }
 
@@ -131,7 +163,7 @@ onMounted(() => {
   } else if (!tokens.value) {
     errorMessage.value = '请先登录获取 token。';
   } else {
-    errorMessage.value = '当前 token 已过期，请重新登录。';
+    errorMessage.value = '当前 token 已过期，请刷新 token 或重新登录。';
   }
 });
 
@@ -147,7 +179,7 @@ watch(
     }
 
     if (!isTokenValid.value) {
-      errorMessage.value = '当前 token 已过期，请重新登录。';
+      errorMessage.value = '当前 token 已过期，请刷新 token 或重新登录。';
       return;
     }
 
@@ -173,11 +205,7 @@ async function generateReview(act: Activity) {
   const config = wheelConfig.value;
 
   if (!config.apiKey) {
-    updateMapValue(
-      reviewError,
-      id,
-      '缺少 OpenAI API Key，请在 Login 页填写或 .env 中配置 VITE_WHEELLOOP_API_KEY。'
-    );
+    updateMapValue(reviewError, id, '缺少 OpenAI API Key，请在 Login 页填写。');
     updateMapValue(reviewLoading, id, false);
     return;
   }
@@ -227,7 +255,11 @@ async function publishReview(act: Activity) {
   updateMapValue(publishSuccess, id, '');
 
   if (!tokens.value?.access_token || !isTokenValid.value) {
-    updateMapValue(publishError, id, 'Token 无效，请重新登录后再试。');
+    updateMapValue(
+      publishError,
+      id,
+      'Token 无效，请刷新 token 或重新登录后再试。'
+    );
     return;
   }
 
@@ -238,8 +270,8 @@ async function publishReview(act: Activity) {
   }
 
   const newDescription = act.description
-    ? `${act.description}\n\n锐评：${review}`
-    : `锐评：${review}`;
+    ? `${act.description}\n\n${review}`
+    : `${review}`;
 
   updateMapValue(publishLoading, id, true);
   try {
@@ -268,6 +300,70 @@ async function publishReview(act: Activity) {
     updateMapValue(publishLoading, id, false);
   }
 }
+
+async function refreshAccessToken() {
+  refreshError.value = '';
+  refreshMessage.value = '';
+
+  if (!tokens.value?.refresh_token) {
+    refreshError.value = '缺少 refresh_token，请重新登录后再试。';
+    return;
+  }
+
+  const { clientId, clientSecret } = resolveClientCredential();
+  if (!clientId || !clientSecret) {
+    refreshError.value =
+      '缺少 Client ID/Secret，请先在登录页填写或配置环境变量。';
+    return;
+  }
+
+  refreshLoading.value = true;
+  try {
+    const res = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'refresh_token',
+        refresh_token: tokens.value.refresh_token,
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`刷新失败：${res.status}`);
+    }
+
+    const data = await res.json();
+    const tokenPayload: TokenPayload | null = data?.access_token
+      ? {
+          token_type: data.token_type || tokens.value.token_type || 'Bearer',
+          access_token: data.access_token,
+          refresh_token: data.refresh_token || tokens.value.refresh_token,
+          expires_at: data.expires_at,
+          expires_in: data.expires_in,
+        }
+      : null;
+
+    if (!tokenPayload) {
+      throw new Error('未获取到新的 access_token。');
+    }
+
+    stravaStore.setSession({
+      tokens: tokenPayload,
+      athlete: data?.athlete ?? athlete.value ?? null,
+    });
+    refreshMessage.value = 'Token 已刷新，可继续拉取活动。';
+    errorMessage.value = '';
+  } catch (error) {
+    refreshError.value =
+      error instanceof Error ? error.message : '刷新 token 失败，请稍后重试。';
+  } finally {
+    refreshLoading.value = false;
+  }
+}
 </script>
 
 <template>
@@ -283,7 +379,7 @@ async function publishReview(act: Activity) {
             Token 有效{{ athleteName ? ` · ${athleteName}` : '' }}，展示最近 20
             条活动。
           </p>
-          <p v-else-if="tokens">当前 token 已过期，请重新登录后再试。</p>
+          <p v-else-if="tokens">当前 token 已过期，请刷新 token 或重新登录。</p>
           <p v-else>请先登录以获取 Strava token。</p>
         </div>
         <Button
@@ -294,10 +390,24 @@ async function publishReview(act: Activity) {
         >
           {{ isLoading ? '加载中…' : '刷新活动' }}
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          :disabled="refreshLoading || !tokens"
+          @click="refreshAccessToken"
+        >
+          {{ refreshLoading ? '刷新中…' : '刷新 Token' }}
+        </Button>
       </div>
 
       <p v-if="errorMessage" class="text-sm text-destructive">
         {{ errorMessage }}
+      </p>
+      <p v-if="refreshError" class="text-sm text-destructive">
+        {{ refreshError }}
+      </p>
+      <p v-else-if="refreshMessage" class="text-sm text-emerald-600">
+        {{ refreshMessage }}
       </p>
 
       <div v-if="isLoading" class="text-sm text-muted-foreground">

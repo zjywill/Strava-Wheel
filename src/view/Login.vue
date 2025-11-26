@@ -307,7 +307,7 @@ onMounted(() => {
               placeholder="如 gpt-4o-mini"
             />
             <p class="text-xs text-muted-foreground">
-              对应 VITE_WHEELLOOP_MODEL，留空则走默认。
+              可填写自定义模型名称，留空则使用默认。
             </p>
           </div>
           <div class="space-y-2">
@@ -318,7 +318,7 @@ onMounted(() => {
               placeholder="自定义 OpenAI Base URL"
             />
             <p class="text-xs text-muted-foreground">
-              对应 VITE_WHEELLOOP_BASE_URL，国内代理时填写。
+              如果需要自定义/代理 OpenAI，可填写 Base URL。
             </p>
           </div>
         </div>
@@ -331,7 +331,7 @@ onMounted(() => {
             placeholder="必填，用于生成锐评"
           />
           <p class="text-xs text-muted-foreground">
-            对应 VITE_WHEELLOOP_API_KEY，保存在 localStorage。
+            用于生成锐评，保存在 localStorage。
           </p>
         </div>
         <div class="space-y-2">
