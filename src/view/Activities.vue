@@ -77,9 +77,9 @@ type SavedCred = {
 };
 
 function readSavedCredential() {
-  if (typeof sessionStorage === 'undefined') return {};
+  if (typeof localStorage === 'undefined') return {};
   try {
-    const raw = sessionStorage.getItem(credentialStorageKey);
+    const raw = localStorage.getItem(credentialStorageKey);
     if (!raw) return {};
     return JSON.parse(raw) as SavedCred;
   } catch {

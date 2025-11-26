@@ -59,7 +59,7 @@ const loginButtonLabel = computed(() =>
 
 function persistCred() {
   try {
-    sessionStorage.setItem(
+    localStorage.setItem(
       credentialStorageKey,
       JSON.stringify({
         clientId: clientId.value,
@@ -74,7 +74,7 @@ function persistCred() {
 
 function restoreCred() {
   try {
-    const raw = sessionStorage.getItem(credentialStorageKey);
+    const raw = localStorage.getItem(credentialStorageKey);
     if (!raw) return;
     const parsed = JSON.parse(raw) as Partial<SavedCred>;
     clientId.value = parsed.clientId ?? '';
