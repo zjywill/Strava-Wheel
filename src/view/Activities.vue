@@ -195,6 +195,24 @@ function updateMapValue<T>(
   target.value = { ...target.value, [key]: value };
 }
 
+async function fetchActivityDetail(id: number) {
+  if (!tokens.value?.access_token || !isTokenValid.value) {
+    throw new Error('Token 无效，无法获取活动详情。');
+  }
+
+  const res = await fetch(`https://www.strava.com/api/v3/activities/${id}`, {
+    headers: {
+      Authorization: `${tokenType.value} ${tokens.value.access_token}`,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`活动详情获取失败：${res.status}`);
+  }
+
+  return res.json();
+}
+
 async function generateReview(act: Activity) {
   const id = act.id;
   updateMapValue(reviewError, id, '');
@@ -203,6 +221,12 @@ async function generateReview(act: Activity) {
   updateMapValue(publishSuccess, id, '');
 
   const config = wheelConfig.value;
+
+  if (!tokens.value?.access_token || !isTokenValid.value) {
+    updateMapValue(reviewError, id, 'Token 无效，请刷新 token 或重新登录。');
+    updateMapValue(reviewLoading, id, false);
+    return;
+  }
 
   if (!config.apiKey) {
     updateMapValue(reviewError, id, '缺少 OpenAI API Key，请在 Login 页填写。');
@@ -217,6 +241,9 @@ async function generateReview(act: Activity) {
       dangerouslyAllowBrowser: true,
     });
 
+    const detail = await fetchActivityDetail(id);
+
+    console.log('Activity payload for review:', detail);
     const completion = await client.chat.completions.create({
       model: config.model,
       temperature: 0.1,
@@ -227,8 +254,8 @@ async function generateReview(act: Activity) {
         },
         {
           role: 'user',
-          content: `请针对下面这条 Strava 活动生成一句不超过 40 字的锐评：\n${JSON.stringify(
-            act
+          content: `请针对下面这条 Strava 活动生成评价：\n${JSON.stringify(
+            detail
           )}`,
         },
       ],
